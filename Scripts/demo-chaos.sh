@@ -2,29 +2,32 @@
 set -euo pipefail
 
 NS="microk8s-term-project"
-SVC_HOST="photo.local"
-INGRESS_URL="http://127.0.0.1/api/load?duration=1.5"
+APP_LABEL="app=photo-gallery-api"
+HOST_HEADER="photo.local"
+URL="http://127.0.0.1/api/info"
 
-echo "==> Generating CPU load via /api/load through Ingress..."
+echo "==> Pods before chaos test:"
+microk8s kubectl get pods -n "$NS" -l "$APP_LABEL" -o wide
 
-if command -v parallel >/dev/null 2>&1; then
-  seq 1 50 | parallel -j 10 curl -s -H "Host: $SVC_HOST" "$INGRESS_URL" >/dev/null &
-else
-  seq 1 50 | xargs -n1 -P10 -I{} curl -s -H "Host: $SVC_HOST" "$INGRESS_URL" >/dev/null &
-fi
+echo
+echo "==> Testing service before deleting a pod:"
+curl -s -H "Host: $HOST_HEADER" "$URL"
+echo
 
-sleep 30
+POD=$(microk8s kubectl get pods -n "$NS" -l "$APP_LABEL" -o jsonpath='{.items[0].metadata.name}')
 
-echo "==> HPA status:"
-microk8s kubectl get hpa photo-gallery-api-hpa -n "$NS"
+echo
+echo "==> Deleting pod: $POD"
+microk8s kubectl delete pod "$POD" -n "$NS"
 
-echo "==> Pods after HPA activity:"
-microk8s kubectl get pods -n "$NS" -o wide
+echo
+echo "==> Service should still be reachable through Ingress:"
+for i in $(seq 1 10); do
+  echo "--- Request $i ---"
+  curl -s -H "Host: $HOST_HEADER" "$URL" | grep -E '"hostname"|"pod_ip"|"version"'
+  sleep 1
+done
 
-echo "==> Manual scaling to 5 replicas as fallback..."
-microk8s kubectl scale deployment photo-gallery-api -n "$NS" --replicas=5
-
-sleep 10
-
-echo "==> Pods after manual scaling:"
-microk8s kubectl get pods -n "$NS" -o wide
+echo
+echo "==> Pods after Kubernetes self-healing:"
+microk8s kubectl get pods -n "$NS" -l "$APP_LABEL" -o wide
