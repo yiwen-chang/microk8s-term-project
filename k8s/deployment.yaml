@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: photo-gallery-api
+  namespace: microk8s-term-project
+  labels:
+    app: photo-gallery-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: photo-gallery-api
+  template:
+    metadata:
+      labels:
+        app: photo-gallery-api
+    spec:
+      containers:
+        - name: photo-gallery-api
+          image: localhost:32000/photo-gallery-api:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: APP_NAME
+              value: "Photo Gallery API (Stateless)"
+            - name: APP_VERSION
+              value: "v1"
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
